@@ -3,144 +3,169 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Traffic Safety Hero</title>
+    <title>Traffic Racer: Quiz Revive</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
-        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;700&display=swap');
-        body { font-family: 'Inter', sans-serif; }
-        .car-bounce { animation: bounce 2s infinite; }
-        @keyframes bounce { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-5px); } }
+        body { margin: 0; background: #1a1a1a; overflow: hidden; font-family: sans-serif; }
+        #gameCanvas { background: #333; display: block; margin: 0 auto; border-left: 5px dashed #fff; border-right: 5px dashed #fff; }
+        .road-line { position: absolute; width: 10px; height: 50px; background: white; left: 50%; transform: translateX(-50%); }
     </style>
 </head>
-<body class="bg-slate-900 text-white min-h-screen flex items-center justify-center p-4">
+<body class="flex items-center justify-center min-h-screen">
 
-    <div id="game-container" class="max-w-md w-full bg-slate-800 rounded-3xl shadow-2xl border-4 border-slate-700 p-8">
-        <div class="flex justify-between items-center mb-8">
-            <h1 class="text-xl font-bold tracking-tight">🚦 TRAFFIC HERO</h1>
-            <div class="bg-yellow-400 text-slate-900 px-4 py-1 rounded-full font-black" id="score-display">Score: 0</div>
+    <div class="relative">
+        <canvas id="gameCanvas" width="400" height="600"></canvas>
+        <div id="ui" class="absolute top-4 left-4 text-white font-bold text-xl drop-shadow-md">
+            Score: <span id="score">0</span>
+        </div>
+        
+        <div id="startOverlay" class="absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-center p-6">
+            <h1 class="text-4xl font-black text-yellow-400 mb-4">TRAFFIC RACER</h1>
+            <p class="text-white mb-6 text-sm">Use ⬅️ LEFT and ➡️ RIGHT arrows to drive.<br>Crash = Answer a safety question to survive!</p>
+            <button onclick="startGame()" class="bg-green-500 hover:bg-green-400 text-white px-8 py-3 rounded-full font-bold transition-transform active:scale-95">START DRIVING</button>
         </div>
 
-        <div id="screen-content">
-            <div class="text-center py-10">
-                <div class="text-6xl mb-6 car-bounce">🚗</div>
-                <h2 class="text-2xl font-bold mb-4">Are you a safe driver?</h2>
-                <p class="text-slate-400 mb-8 text-sm">Follow the rules, earn points, and avoid accidents.</p>
-                <button onclick="startGame()" class="w-full bg-blue-500 hover:bg-blue-400 text-white font-bold py-4 rounded-2xl transition-all active:scale-95 shadow-lg shadow-blue-500/20">
-                    START ENGINE
-                </button>
-            </div>
+        <div id="quizOverlay" class="hidden absolute inset-0 bg-slate-900/95 flex flex-col items-center justify-center text-center p-8">
+            <div class="text-5xl mb-4">⚠️ MISTAKE!</div>
+            <h2 id="questionText" class="text-xl font-bold text-white mb-6">Question goes here?</h2>
+            <div id="options" class="grid gap-4 w-full">
+                </div>
+        </div>
+
+        <div id="gameOverOverlay" class="hidden absolute inset-0 bg-red-900/90 flex flex-col items-center justify-center text-center p-6">
+            <h2 class="text-4xl font-black text-white mb-2">GAME OVER</h2>
+            <p id="finalScore" class="text-white text-xl mb-6">Final Score: 0</p>
+            <button onclick="location.reload()" class="bg-white text-red-900 px-8 py-3 rounded-full font-bold">TRY AGAIN</button>
         </div>
     </div>
 
-    <script>
-        let score = 0;
-        let currentLevel = 0;
+<script>
+    const canvas = document.getElementById('gameCanvas');
+    const ctx = canvas.getContext('2d');
+    const scoreEl = document.getElementById('score');
+    
+    // Game Variables
+    let gameActive = false;
+    let score = 0;
+    let speed = 5;
+    let player = { x: 175, y: 500, w: 50, h: 80, color: '#3b82f6' };
+    let obstacles = [];
+    let frame = 0;
 
-        const scenarios = [
-            {
-                level: "Traffic Signal",
-                icon: "🔴",
-                question: "The light is RED. What is your move?",
-                options: [
-                    { text: "Full Stop", correct: true, feedback: "Perfect! You saved lives.", points: 10 },
-                    { text: "Speed Up", correct: false, feedback: "Crash! You jumped a red light.", points: -5 },
-                    { text: "Slowly Crawl", correct: false, feedback: "Dangerous! Wait for Green.", points: -5 }
-                ]
-            },
-            {
-                level: "Zebra Crossing",
-                icon: "🚶‍♂️",
-                question: "Pedestrians are waiting to cross. Action?",
-                options: [
-                    { text: "Honk & Drive", correct: false, feedback: "Rudeness isn't safety!", points: -5 },
-                    { text: "Stop and Wait", correct: true, feedback: "Respect! Pedestrians first.", points: 10 },
-                    { text: "Overtake", correct: false, feedback: "Very dangerous maneuver!", points: -10 }
-                ]
-            },
-            {
-                level: "Speed Limit",
-                icon: "🏫",
-                question: "You are entering a SCHOOL ZONE.",
-                options: [
-                    { text: "Maintain 60km/h", correct: false, feedback: "Too fast for children!", points: -5 },
-                    { text: "Slow to 20km/h", correct: true, feedback: "Smart! Safety over speed.", points: 10 }
-                ]
+    // Quiz Data
+    const quizBank = [
+        { q: "What does a flashing yellow light mean?", a: ["Stop", "Proceed with caution", "Speed up"], correct: 1 },
+        { q: "When should you wear a seatbelt?", a: ["Only on highways", "Only if police are there", "Every single time"], correct: 2 },
+        { q: "A pedestrian is on the zebra crossing. You...", a: ["Honk loudly", "Stop and let them cross", "Drive around them"], correct: 1 },
+        { q: "You see an Ambulance with sirens. You...", a: ["Pull over and stop", "Race it", "Stay in the middle"], correct: 0 }
+    ];
+
+    // Input Handling
+    const keys = {};
+    window.addEventListener('keydown', e => keys[e.code] = true);
+    window.addEventListener('keyup', e => keys[e.code] = false);
+
+    function startGame() {
+        document.getElementById('startOverlay').classList.add('hidden');
+        gameActive = true;
+        animate();
+    }
+
+    function createObstacle() {
+        if (frame % 80 === 0) {
+            const x = Math.random() * (canvas.width - 50);
+            obstacles.push({ x, y: -100, w: 50, h: 80, color: '#ef4444' });
+        }
+    }
+
+    function handleMistake() {
+        gameActive = false;
+        const randomQuiz = quizBank[Math.floor(Math.random() * quizBank.length)];
+        document.getElementById('quizOverlay').classList.remove('hidden');
+        document.getElementById('questionText').innerText = randomQuiz.q;
+        
+        const optionsDiv = document.getElementById('options');
+        optionsDiv.innerHTML = '';
+        
+        randomQuiz.a.forEach((opt, index) => {
+            const btn = document.createElement('button');
+            btn.className = "bg-slate-700 hover:bg-blue-600 text-white p-4 rounded-xl transition";
+            btn.innerText = opt;
+            btn.onclick = () => {
+                if (index === randomQuiz.correct) {
+                    // Correct! Revive
+                    document.getElementById('quizOverlay').classList.add('hidden');
+                    obstacles = []; // Clear obstacles to give a head start
+                    gameActive = true;
+                    animate();
+                } else {
+                    // Wrong! Game Over
+                    showGameOver();
+                }
+            };
+            optionsDiv.appendChild(btn);
+        });
+    }
+
+    function showGameOver() {
+        document.getElementById('quizOverlay').classList.add('hidden');
+        document.getElementById('gameOverOverlay').classList.remove('hidden');
+        document.getElementById('finalScore').innerText = `Final Score: ${score}`;
+        gameActive = false;
+    }
+
+    function animate() {
+        if (!gameActive) return;
+
+        ctx.clearRect(0, 0, canvas.width, canvas.height);
+        frame++;
+
+        // Draw Road Markings
+        ctx.strokeStyle = "rgba(255,255,255,0.5)";
+        ctx.setLineDash([20, 20]);
+        ctx.beginPath();
+        ctx.moveTo(canvas.width/2, 0);
+        ctx.lineTo(canvas.width/2, canvas.height);
+        ctx.stroke();
+
+        // Player Movement
+        if (keys['ArrowLeft'] && player.x > 0) player.x -= 7;
+        if (keys['ArrowRight'] && player.x < canvas.width - player.w) player.x += 7;
+
+        // Draw Player
+        ctx.fillStyle = player.color;
+        ctx.fillRect(player.x, player.y, player.w, player.h);
+        // Headlights
+        ctx.fillStyle = "yellow";
+        ctx.fillRect(player.x + 5, player.y, 10, 5);
+        ctx.fillRect(player.x + 35, player.y, 10, 5);
+
+        // Obstacles Logic
+        createObstacle();
+        obstacles.forEach((obs, index) => {
+            obs.y += speed;
+            ctx.fillStyle = obs.color;
+            ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
+
+            // Collision Detection
+            if (player.x < obs.x + obs.w &&
+                player.x + player.w > obs.x &&
+                player.y < obs.y + obs.h &&
+                player.y + player.h > obs.y) {
+                handleMistake();
             }
-        ];
 
-        function updateScore(points) {
-            score += points;
-            document.getElementById('score-display').innerText = `Score: ${score}`;
-        }
-
-        function startGame() {
-            score = 0;
-            currentLevel = 0;
-            updateScore(0);
-            renderLevel();
-        }
-
-        function renderLevel() {
-            const level = scenarios[currentLevel];
-            const content = document.getElementById('screen-content');
-            
-            content.innerHTML = `
-                <div class="animate-in fade-in duration-500">
-                    <p class="text-xs text-blue-400 font-bold uppercase mb-2 tracking-widest">${level.level}</p>
-                    <div class="text-7xl text-center my-8">${level.icon}</div>
-                    <h2 class="text-xl font-semibold mb-6 text-center">${level.question}</h2>
-                    <div class="space-y-3">
-                        ${level.options.map((opt, i) => `
-                            <button onclick="handleAnswer(${i})" class="w-full text-left bg-slate-700 hover:bg-slate-600 p-4 rounded-xl border border-slate-600 transition-colors">
-                                ${opt.text}
-                            </button>
-                        `).join('')}
-                    </div>
-                </div>
-            `;
-        }
-
-        function handleAnswer(index) {
-            const option = scenarios[currentLevel].options[index];
-            const content = document.getElementById('screen-content');
-            
-            updateScore(option.points);
-
-            content.innerHTML = `
-                <div class="text-center py-10 animate-in zoom-in duration-300">
-                    <div class="text-5xl mb-4">${option.correct ? '✅' : '❌'}</div>
-                    <h2 class="text-2xl font-bold mb-2">${option.correct ? 'Great Job!' : 'Oh No!'}</h2>
-                    <p class="text-slate-400 mb-8">${option.feedback}</p>
-                    <button onclick="nextStep()" class="w-full bg-slate-100 text-slate-900 font-bold py-4 rounded-2xl">
-                        ${currentLevel < scenarios.length - 1 ? 'NEXT LEVEL' : 'SEE RESULTS'}
-                    </button>
-                </div>
-            `;
-        }
-
-        function nextStep() {
-            if (currentLevel < scenarios.length - 1) {
-                currentLevel++;
-                renderLevel();
-            } else {
-                showEndScreen();
+            // Remove off-screen & Increase Score
+            if (obs.y > canvas.height) {
+                obstacles.splice(index, 1);
+                score += 10;
+                scoreEl.innerText = score;
+                if (score % 100 === 0) speed += 0.5; // Difficulty increase
             }
-        }
+        });
 
-        function showEndScreen() {
-            const content = document.getElementById('screen-content');
-            let rank = score >= 25 ? "Gold Driver 🏆" : "Student Driver 🔰";
-            
-            content.innerHTML = `
-                <div class="text-center">
-                    <h2 class="text-3xl font-black mb-2 uppercase">Finish Line!</h2>
-                    <div class="text-5xl my-6">🏁</div>
-                    <p class="text-slate-400 mb-1">Your Final Rank:</p>
-                    <p class="text-2xl font-bold text-yellow-400 mb-8">${rank}</p>
-                    <button onclick="startGame()" class="w-full bg-blue-500 text-white font-bold py-4 rounded-2xl">RESTART GAME</button>
-                </div>
-            `;
-        }
-    </script>
+        requestAnimationFrame(animate);
+    }
+</script>
 </body>
 </html>
