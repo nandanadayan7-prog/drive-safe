@@ -3,38 +3,42 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Traffic Racer: Quiz Revive</title>
+    <title>Traffic Racer: Signal Rules</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         body { margin: 0; background: #1a1a1a; overflow: hidden; font-family: sans-serif; }
-        #gameCanvas { background: #333; display: block; margin: 0 auto; border-left: 5px dashed #fff; border-right: 5px dashed #fff; }
-        .road-line { position: absolute; width: 10px; height: 50px; background: white; left: 50%; transform: translateX(-50%); }
+        #gameCanvas { background: #333; display: block; margin: 0 auto; border-left: 5px solid #555; border-right: 5px solid #555; }
     </style>
 </head>
 <body class="flex items-center justify-center min-h-screen">
 
     <div class="relative">
         <canvas id="gameCanvas" width="400" height="600"></canvas>
-        <div id="ui" class="absolute top-4 left-4 text-white font-bold text-xl drop-shadow-md">
-            Score: <span id="score">0</span>
+        
+        <div id="ui" class="absolute top-4 left-4 right-4 flex justify-between items-start text-white font-bold pointer-events-none">
+            <div class="bg-black/50 p-2 rounded">Score: <span id="score">0</span></div>
+            <div id="signalContainer" class="bg-gray-800 p-2 rounded-lg border-2 border-gray-600 flex flex-col gap-1 w-10 items-center">
+                <div id="redLight" class="w-6 h-6 rounded-full bg-red-900 border border-black"></div>
+                <div id="yellowLight" class="w-6 h-6 rounded-full bg-yellow-900 border border-black"></div>
+                <div id="greenLight" class="w-6 h-6 rounded-full bg-green-900 border border-black"></div>
+            </div>
         </div>
         
         <div id="startOverlay" class="absolute inset-0 bg-black/80 flex flex-col items-center justify-center text-center p-6">
-            <h1 class="text-4xl font-black text-yellow-400 mb-4">TRAFFIC RACER</h1>
-            <p class="text-white mb-6 text-sm">Use ⬅️ LEFT and ➡️ RIGHT arrows to drive.<br>Crash = Answer a safety question to survive!</p>
-            <button onclick="startGame()" class="bg-green-500 hover:bg-green-400 text-white px-8 py-3 rounded-full font-bold transition-transform active:scale-95">START DRIVING</button>
+            <h1 class="text-3xl font-black text-yellow-400 mb-2">TRAFFIC RULES RACER</h1>
+            <p class="text-white mb-6 text-sm">STOP on RED or you'll be fined!<br>Use ⬅️ ➡️ to steer. Use ⬆️ to move, Release to slow.</p>
+            <button onclick="startGame()" class="bg-blue-500 text-white px-8 py-3 rounded-full font-bold">START DRIVING</button>
         </div>
 
-        <div id="quizOverlay" class="hidden absolute inset-0 bg-slate-900/95 flex flex-col items-center justify-center text-center p-8">
-            <div class="text-5xl mb-4">⚠️ MISTAKE!</div>
-            <h2 id="questionText" class="text-xl font-bold text-white mb-6">Question goes here?</h2>
-            <div id="options" class="grid gap-4 w-full">
-                </div>
+        <div id="quizOverlay" class="hidden absolute inset-0 bg-slate-900/95 flex flex-col items-center justify-center p-8">
+            <div class="text-red-500 text-4xl mb-2 font-black italic underline">VIOLATION!</div>
+            <p id="violationReason" class="text-white mb-4 italic font-bold"></p>
+            <h2 id="questionText" class="text-xl font-bold text-white mb-6 text-center">Safety Question?</h2>
+            <div id="options" class="grid gap-3 w-full"></div>
         </div>
 
         <div id="gameOverOverlay" class="hidden absolute inset-0 bg-red-900/90 flex flex-col items-center justify-center text-center p-6">
             <h2 class="text-4xl font-black text-white mb-2">GAME OVER</h2>
-            <p id="finalScore" class="text-white text-xl mb-6">Final Score: 0</p>
             <button onclick="location.reload()" class="bg-white text-red-900 px-8 py-3 rounded-full font-bold">TRY AGAIN</button>
         </div>
     </div>
@@ -42,25 +46,26 @@
 <script>
     const canvas = document.getElementById('gameCanvas');
     const ctx = canvas.getContext('2d');
-    const scoreEl = document.getElementById('score');
     
-    // Game Variables
+    // Game State
     let gameActive = false;
     let score = 0;
-    let speed = 5;
-    let player = { x: 175, y: 500, w: 50, h: 80, color: '#3b82f6' };
+    let speed = 0;
+    let maxSpeed = 6;
+    let player = { x: 175, y: 480, w: 50, h: 85 };
     let obstacles = [];
     let frame = 0;
 
-    // Quiz Data
+    // Signal Logic
+    let signal = 'GREEN'; // RED, YELLOW, GREEN
+    let signalTimer = 0;
+
     const quizBank = [
-        { q: "What does a flashing yellow light mean?", a: ["Stop", "Proceed with caution", "Speed up"], correct: 1 },
-        { q: "When should you wear a seatbelt?", a: ["Only on highways", "Only if police are there", "Every single time"], correct: 2 },
-        { q: "A pedestrian is on the zebra crossing. You...", a: ["Honk loudly", "Stop and let them cross", "Drive around them"], correct: 1 },
-        { q: "You see an Ambulance with sirens. You...", a: ["Pull over and stop", "Race it", "Stay in the middle"], correct: 0 }
+        { q: "What is the penalty for jumping a Red Light?", a: ["Fine & License points", "A free coffee", "Nothing"], correct: 0 },
+        { q: "You see a STOP sign. You must...", a: ["Slow down", "Stop completely", "Honk and pass"], correct: 1 },
+        { q: "Who has the priority at a Zebra Crossing?", a: ["Fast cars", "Pedestrians", "Bicycles"], correct: 1 }
     ];
 
-    // Input Handling
     const keys = {};
     window.addEventListener('keydown', e => keys[e.code] = true);
     window.addEventListener('keyup', e => keys[e.code] = false);
@@ -68,99 +73,101 @@
     function startGame() {
         document.getElementById('startOverlay').classList.add('hidden');
         gameActive = true;
+        updateSignal();
         animate();
     }
 
-    function createObstacle() {
-        if (frame % 80 === 0) {
-            const x = Math.random() * (canvas.width - 50);
-            obstacles.push({ x, y: -100, w: 50, h: 80, color: '#ef4444' });
-        }
+    function updateSignal() {
+        if (!gameActive) return;
+        
+        // Cycle: Green (5s) -> Yellow (2s) -> Red (4s)
+        if (signal === 'GREEN') { signal = 'YELLOW'; setTimeout(updateSignal, 2000); }
+        else if (signal === 'YELLOW') { signal = 'RED'; setTimeout(updateSignal, 4000); }
+        else if (signal === 'RED') { signal = 'GREEN'; setTimeout(updateSignal, 5000); }
+
+        // Visual Updates
+        document.getElementById('redLight').style.backgroundColor = (signal === 'RED') ? '#ff0000' : '#4a0000';
+        document.getElementById('yellowLight').style.backgroundColor = (signal === 'YELLOW') ? '#ffff00' : '#4a4a00';
+        document.getElementById('greenLight').style.backgroundColor = (signal === 'GREEN') ? '#00ff00' : '#004a00';
     }
 
-    function handleMistake() {
+    function triggerQuiz(reason) {
         gameActive = false;
-        const randomQuiz = quizBank[Math.floor(Math.random() * quizBank.length)];
+        speed = 0;
+        document.getElementById('violationReason').innerText = reason;
         document.getElementById('quizOverlay').classList.remove('hidden');
-        document.getElementById('questionText').innerText = randomQuiz.q;
         
-        const optionsDiv = document.getElementById('options');
-        optionsDiv.innerHTML = '';
+        const q = quizBank[Math.floor(Math.random() * quizBank.length)];
+        document.getElementById('questionText').innerText = q.q;
+        const optDiv = document.getElementById('options');
+        optDiv.innerHTML = '';
         
-        randomQuiz.a.forEach((opt, index) => {
+        q.a.forEach((text, i) => {
             const btn = document.createElement('button');
-            btn.className = "bg-slate-700 hover:bg-blue-600 text-white p-4 rounded-xl transition";
-            btn.innerText = opt;
+            btn.className = "bg-slate-700 p-3 rounded text-white hover:bg-blue-600";
+            btn.innerText = text;
             btn.onclick = () => {
-                if (index === randomQuiz.correct) {
-                    // Correct! Revive
+                if (i === q.correct) {
                     document.getElementById('quizOverlay').classList.add('hidden');
-                    obstacles = []; // Clear obstacles to give a head start
                     gameActive = true;
+                    obstacles = [];
                     animate();
                 } else {
-                    // Wrong! Game Over
-                    showGameOver();
+                    document.getElementById('quizOverlay').classList.add('hidden');
+                    document.getElementById('gameOverOverlay').classList.remove('hidden');
                 }
             };
-            optionsDiv.appendChild(btn);
+            optDiv.appendChild(btn);
         });
-    }
-
-    function showGameOver() {
-        document.getElementById('quizOverlay').classList.add('hidden');
-        document.getElementById('gameOverOverlay').classList.remove('hidden');
-        document.getElementById('finalScore').innerText = `Final Score: ${score}`;
-        gameActive = false;
     }
 
     function animate() {
         if (!gameActive) return;
-
         ctx.clearRect(0, 0, canvas.width, canvas.height);
         frame++;
 
-        // Draw Road Markings
-        ctx.strokeStyle = "rgba(255,255,255,0.5)";
-        ctx.setLineDash([20, 20]);
-        ctx.beginPath();
-        ctx.moveTo(canvas.width/2, 0);
-        ctx.lineTo(canvas.width/2, canvas.height);
-        ctx.stroke();
+        // Speed Logic (Move only when Up Arrow is pressed)
+        if (keys['ArrowUp']) {
+            speed = Math.min(speed + 0.2, maxSpeed);
+        } else {
+            speed = Math.max(speed - 0.1, 0);
+        }
 
-        // Player Movement
-        if (keys['ArrowLeft'] && player.x > 0) player.x -= 7;
-        if (keys['ArrowRight'] && player.x < canvas.width - player.w) player.x += 7;
+        // Steer Logic
+        if (keys['ArrowLeft'] && player.x > 10) player.x -= 5;
+        if (keys['ArrowRight'] && player.x < canvas.width - 60) player.x += 5;
 
-        // Draw Player
-        ctx.fillStyle = player.color;
+        // VIOLATION CHECK: Moving during Red Light
+        if (signal === 'RED' && speed > 0.5) {
+            score = Math.max(0, score - 20); // Penalty
+            triggerQuiz("RED LIGHT VIOLATION (-20 Points)");
+            return;
+        }
+
+        // Draw Player Car
+        ctx.fillStyle = "#3b82f6";
         ctx.fillRect(player.x, player.y, player.w, player.h);
-        // Headlights
-        ctx.fillStyle = "yellow";
-        ctx.fillRect(player.x + 5, player.y, 10, 5);
-        ctx.fillRect(player.x + 35, player.y, 10, 5);
 
-        // Obstacles Logic
-        createObstacle();
-        obstacles.forEach((obs, index) => {
-            obs.y += speed;
-            ctx.fillStyle = obs.color;
+        // Obstacles (Traffic)
+        if (frame % 100 === 0 && speed > 0) {
+            obstacles.push({ x: Math.random() * 300 + 50, y: -100, w: 50, h: 80 });
+        }
+
+        obstacles.forEach((obs, i) => {
+            obs.y += speed + 2; // Relative speed
+            ctx.fillStyle = "#ef4444";
             ctx.fillRect(obs.x, obs.y, obs.w, obs.h);
 
-            // Collision Detection
-            if (player.x < obs.x + obs.w &&
-                player.x + player.w > obs.x &&
-                player.y < obs.y + obs.h &&
-                player.y + player.h > obs.y) {
-                handleMistake();
+            // Collision Check
+            if (player.x < obs.x + obs.w && player.x + player.w > obs.x && 
+                player.y < obs.y + obs.h && player.y + player.h > obs.y) {
+                triggerQuiz("TRAFFIC COLLISION!");
             }
 
-            // Remove off-screen & Increase Score
             if (obs.y > canvas.height) {
-                obstacles.splice(index, 1);
+                obstacles.splice(i, 1);
                 score += 10;
-                scoreEl.innerText = score;
-                if (score % 100 === 0) speed += 0.5; // Difficulty increase
+                document.getElementById('score').innerText = score;
             }
         });
 
